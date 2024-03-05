@@ -3,12 +3,15 @@
 # 通过脚本参数传递源文件夹和输出文件夹的名字
 source_folder="$1"
 output_folder="$2"
-
+config_path="$3"
 # 检查参数是否提供
-if [ -z "${source_folder}" ] || [ -z "${output_folder}" ]; then
+if [ -z "${source_folder}" ] || [ -z "${output_folder}" ] || [ -z "${config_path}" ]; then
     echo "请提供源文件夹和输出文件夹的名字作为参数"
     exit 1
 fi
+
+# 获取config_path的绝对路径
+absolute_config_path=$(readlink -f "${config_path}")
 
 # Clang 工具路径和参数
 clang_tool="./my_clang_tool"
@@ -21,14 +24,14 @@ current_path=$(pwd)
 mkdir -p "${output_folder}"
 
 # 遍历源文件夹中的所有文件
-find "${source_folder}" -type f -name "*.cpp" | while read -r file; do
+find "${source_folder}" -type f \( -name "*.cpp" -o -name "*.c" \) | while read -r file; do
     if [ -f "${file}" ]; then
         # 提取文件名和扩展名
         filename=$(basename "${file}")
         extension="${filename##*.}"
 
-        # 检查文件扩展名是否为.cpp
-        if [ "${extension}" = "cpp" ]; then
+        # 检查文件扩展名是否为.cpp 或 .c
+        if [ "${extension}" = "cpp" ] || [ "${extension}" = "c" ]; then
             # 获取文件相对于源文件夹的相对路径
             relative_path="${file#${source_folder}/}"
 
@@ -38,7 +41,7 @@ find "${source_folder}" -type f -name "*.cpp" | while read -r file; do
             # 获取绝对路径
             absolute_path="${current_path}/${relative_output_file}"
 
-            clang_tool_args="--out-put=${absolute_path}"
+	    clang_tool_args="--out-put=${absolute_path} --config-path=${absolute_config_path}"
 
             echo "Processed ${file} and saved to ${clang_tool_args}"
 
@@ -46,7 +49,7 @@ find "${source_folder}" -type f -name "*.cpp" | while read -r file; do
             ${clang_tool} "${file}" ${clang_tool_args}
            
         else
-            echo "Skipping non-C++ file: ${file}"
+            echo "Skipping non-C/C++ file: ${file}"
         fi
     fi
 done
