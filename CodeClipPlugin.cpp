@@ -3,106 +3,38 @@
 using namespace clang;
 using namespace clang::tooling;
 
-
-//  配置文件解析功能
-std::unordered_map<std::string, int> parseFile(const std::string& filename)
-{
-
-    std::unordered_map<std::string, int> config;
-    //  创建文件流
-    std::ifstream file(filename);
-    std::string line;
-
-    //  逐行读取文件内容
-    while (std::getline(file, line))
-    {
-        std::istringstream iss(line);
-        std::string key;
-        int value;        
-        if (iss >> key >> value)
-        {
-            std::cout << "key :" << key << " value :" <<value << "\n";
-            config[key] = value;
-        }
-    }
-
-    return config;
-}
-
-bool MarcoLogicHandler(const std::unordered_map<std::string, int>& config) {
-
-  int CodeClipFlag = 1;
-
-  std::cout << "MarcoLogicHandler" << "\n";
-
-  // 遍历map中的值
-  for (const auto& pair : config) {
-
-      if (pair.first == "FEATURE")
-      {
-
-        std::cout << "pair.first == FEATURE" <<  "\n";
-        if (pair.second == 1)
-        {
-          CodeClipFlag = 1;
-          std::cout << "CodeClipFlag : 1" << "\n";
-        }
-        else
-        {
-          CodeClipFlag = 0;
-
-          std::cout << "CodeClipFlag : 0" << "\n";
-          return 0;
-        }
-      }
-
-      if (pair.first == "FEATURE_A" &&  CodeClipFlag == 1)
-      {
-        std::cout << "pair.first == FEATURE_A" <<  "\n";
-        if (pair.second == 1)
-        {
-          std::cout << "CodeClipFlag : 1" << "\n";
-          return 1;
-        }
-        else
-        {
-          std::cout << "CodeClipFlag : 0" << "\n";
-          return 0;
-        }
-
-      }
-     
-  }
-
-}
-
-
-// For each source file provided to the tool, a new FrontendAction is created.
+// ASTFrontendAction类的实现
+// EndSourceFileAction BeginSourceFileAction源文件处理前后动作 CreateASTConsumer自定义动作 实现
 class MyFrontendAction : public ASTFrontendAction {
 public:
   MyFrontendAction() {}
 
-  static std::string InputValue;
-  static std::string OutputValue;
-  static std::string ConfigValue;
-  static std::vector<std::string> lines;
-  static bool        ClipFlag;
+  static std::string InputValue;  //  输入文件
+  static std::string OutputValue;  //  输出文件
+  static std::string ConfigValue;  //  配置文件
+  static std::string MarcoValue;  //  待处理宏定义
+  static std::vector<std::string> lines;  //  待处理文件内容
+  static bool        ClipFlag;  //  待处理标志
 
+  //  自定义处理函数
   std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI,
                                                  StringRef file) override {
  
   //  获取当前处理的文件名
-  currentFilePath = file.str();
+  std::string currentFilePath = file.str();
 
   InputValue = currentFilePath;
 
   llvm::outs() << "当前处理文件路径: " << currentFilePath << "\n";
 
-//  llvm::outs() << "配置文件路径: " << ConfigValue << "\n";
+  //  读取配置文件
+  std::unordered_map<std::string, int>  ConfigMap = parseFile(ConfigValue); //  home/zq/桌面/test0305/MarcoConfig.txt
 
-  std::unordered_map<std::string, int>  ConfigMap = parseFile(ConfigValue); ///  home/zq/桌面/test0305/MarcoConfig.txt
-
+  //  配置文件数据处理
   MyFrontendAction::ClipFlag = MarcoLogicHandler(ConfigMap);
+
+  llvm::outs() << "待处理宏: " << MyFrontendAction::MarcoValue << "\n";
+  llvm::outs() << "待处理宏定义修改值: " << MyFrontendAction::ClipFlag << "\n";
 
   SourceManager &SM = CI.getSourceManager();
 
@@ -112,12 +44,14 @@ public:
 
   Preprocessor &PP = CI.getPreprocessor();
   
+  //  编译前端回调函数注册
   PP.addPPCallbacks(std::make_unique<CodeClipCallbacks>(PP , &astContext, SM, langOptions));
 
   return std::make_unique<ASTConsumer>();
 
   }
 
+  //  源文件处理前动作--对输入文件内容进行读取
   bool BeginSourceFileAction(CompilerInstance &CI) {
 
     llvm::outs() << "--------- BeginSourceFileAction  ---------\n";
@@ -132,8 +66,6 @@ public:
     char current_path[256];
     getcwd(current_path, sizeof(current_path));
     std::string current_path_str(current_path);
-
-    std::cout << "当前工作路径 " << current_path_str << std::endl;
 
     std::string infilename = MyFrontendAction::OutputValue; 
 
@@ -161,27 +93,29 @@ public:
     return true;
   }
 
+  //  源文件处理后动作--对输出文件内容进行修改
   void EndSourceFileAction() override {
 
     llvm::outs() << "--------- EndSourceFileAction  ---------\n";
  
-    //  重新打开文件并写入更新后的内容
+    //  打开输出文件并写入更新后的内容
     std::string outinfilename = MyFrontendAction::OutputValue;
 
     std::ofstream outputFile(outinfilename);
     std::ostringstream outputline;
     llvm::outs() << "当前输出文件: " << outinfilename << "\n";
 
+    //  检查文件是否打开
     if (outputFile.is_open())
     {
         for (int i = 0; i < lines.size(); i++)
         {
+          //  逐行写入文件
           outputFile << lines[i] << '\n';
-
         }
       std::cout << "File updated successfully" << std::endl;
       outputFile.close();
-
+      
     }
     else
     {
@@ -192,25 +126,23 @@ public:
 
   }
 
-private:
-  
-std::string currentFilePath;
 
 };
-
 
 void clang::CodeClipCallbacks::If(SourceLocation Loc, SourceRange ConditionRange,
           ConditionValueKind ConditionValue) 
 {
-  // 获取 ConditionRange 的源代码片段
+  // 获取条件编译#if所包含的源代码片段
   clang::SourceLocation StartLoc = ConditionRange.getBegin();
   clang::SourceLocation EndLoc = ConditionRange.getEnd();
   clang::SourceLocation StartFileLoc = SM.getSpellingLoc(StartLoc);
   clang::SourceLocation EndFileLoc = SM.getSpellingLoc(EndLoc);
   
+  //  转化为字符串
   StringRef conditionCode = Lexer::getSourceText(CharSourceRange::getTokenRange(ConditionRange), SM, LangOpts, 0);
 
-  std::string targetFeature = "FEATURE_A"; // todo 改成各个目标的判断
+  //  读取静态变量的目标宏定义值和待修改值
+  std::string targetFeature = MyFrontendAction::MarcoValue; // todo 改成各个目标的判断
   std::string replacement = std::to_string(MyFrontendAction::ClipFlag);
 
   size_t found = conditionCode.str().find(targetFeature);
@@ -225,8 +157,6 @@ void clang::CodeClipCallbacks::If(SourceLocation Loc, SourceRange ConditionRange
 
     // 输出源代码片段
     std::cout << "处理前代码:  " << conditionCode.str() << std::endl;
-
-
 
     std::string newconditionCode = conditionCode.str().replace(found, targetFeature.length(), replacement);
 
@@ -248,18 +178,101 @@ void clang::CodeClipCallbacks::If(SourceLocation Loc, SourceRange ConditionRange
   //  存在即替换
   updatedLine = MyFrontendAction::lines[line - 1].replace(found_flag, targetFeature.length(), replacement);
 
-  // std::cout << " replaced string L :" << updatedLine<< std::endl;
-
   //  更新替换后的行
   MyFrontendAction::lines[line - 1] = updatedLine;
 
   } 
-
   else {
 
-      std::cout << "不包含特性 " << targetFeature << std::endl;
+//      std::cout << "不包含特性 " << targetFeature << std::endl;
 
   }
+}
+
+
+//  配置文件参数读取
+std::unordered_map<std::string, int> parseFile(const std::string& filename)
+{
+    //  待读取键值对
+    std::unordered_map<std::string, int> config;
+    //  创建文件流
+    std::ifstream file(filename);
+    std::string line;
+
+    //  逐行读取文件内容
+    while (std::getline(file, line))
+    {
+        std::istringstream iss(line);
+        std::string key;
+        int value;        
+        if (iss >> key >> value)  //  逐行读取键值
+        {
+            std::cout << "key :" << key << " value :" <<value << "\n";
+            config[key] = value;
+        }
+    }
+
+    return config;
+}
+
+//  配置文件参数解析
+bool MarcoLogicHandler(const std::unordered_map<std::string, int>& config) {
+
+  bool MajorFlag = 1;
+  bool MinorFlag = 1;
+
+  // 遍历map中的值
+  for (const auto& pair : config) {
+
+      if (pair.first == "FEATURE")  //  读取总体配置值
+      {
+        // std::cout << "pair.first == FEATURE" <<  "\n";
+        if (pair.second == 1)
+        {
+          MajorFlag = 1;
+          // std::cout << "MajorFlag : 1" << "\n";
+        }
+        else
+        {
+          MajorFlag = 0;
+          // std::cout << "MajorFlag : 0" << "\n";
+        }
+      }
+
+      if (pair.first != "FEATURE")  //  读取目标宏定义配置值
+      {
+        MyFrontendAction::MarcoValue = pair.first;
+        // std::cout << "MarcoValue : "  << MyFrontendAction::MarcoValue<<  "\n";
+
+        if (pair.second == 1)
+        {
+          MinorFlag = 1;
+          // std::cout << "MinorFlag : 1" << "\n";
+        }
+        else
+        {
+          MinorFlag = 0;
+          // std::cout << "MinorFlag : 0" << "\n";
+        }
+
+      }    
+  }
+
+  if (MajorFlag == 1) //  总体配置值
+  {
+    if (MinorFlag == 1) //  宏定义配置值
+    {
+      return 1;
+    }else
+    {
+      return 0;
+    }
+  }else // 全部裁剪
+  {
+    return 0;
+
+  }
+
 }
 
 
@@ -267,9 +280,11 @@ void clang::CodeClipCallbacks::If(SourceLocation Loc, SourceRange ConditionRange
 std::string MyFrontendAction::InputValue;
 std::string MyFrontendAction::OutputValue;
 std::string MyFrontendAction::ConfigValue;
+std::string MyFrontendAction::MarcoValue;
 std::vector<std::string> MyFrontendAction::lines;
 bool        MyFrontendAction::ClipFlag = 1;
 
+//  自定义命令行类
 static  llvm::cl::OptionCategory CodeClipCategory("CodeClip Matcher Sample");
 
 // // 添加自定义命令行选项

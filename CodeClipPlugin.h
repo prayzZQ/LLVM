@@ -80,4 +80,11 @@ CodeClipCallbacks(clang::Preprocessor &PP, clang::ASTContext *ASTContextPtr,
 };
 
 } // end namespace clang
+
+
+bool MarcoLogicHandler(const std::unordered_map<std::string, int>& config);
+
+std::unordered_map<std::string, int> parseFile(const std::string& filename);
+
+
 #endif

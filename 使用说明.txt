@@ -1,0 +1,9 @@
+使用如下指令运行脚本
+./codeclip.sh testfolder testfolder_copy MarcoConfig.txt 
+其中 testfolder 为目标源文件夹  testfolder_copy 为其副本 MarcoConfig.txt 为配置文件
+
+配置文件MarcoConfig.txt 中
+FEATURE为主开关
+gcdENABLE_2D为目标宏定义
+
+需保证testfolder 和testfolder_copy 文件内容一致
